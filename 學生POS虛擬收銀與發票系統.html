@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>學習能量補給站 · 學生 POS 收銀系統</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  // 保險逾時：若 Firebase 模組（下方 type=module 區塊）在 4 秒內因網路或 CORS 問題
+  // 未能成功載入並觸發 firebase-sdk-ready，就視為載入失敗，讓 React 端可以顯示明確錯誤，
+  // 而不是永遠卡在空白畫面。一旦模組成功載入，會自行清除這個逾時。
+  window.__firebaseSdkLoadFailed = false;
+  window.__firebaseSdkTimeoutId = setTimeout(function(){
+    if(!window.__firebaseSdk){
+      window.__firebaseSdkLoadFailed = true;
+      window.dispatchEvent(new Event('firebase-sdk-ready'));
+    }
+  }, 4000);
+</script>
+<script type="module">
+  // Firebase 模組化 SDK：載入後掛到 window.__firebase，讓下方的 React（Babel）程式碼可以使用。
+  // 尚未設定 Firebase 專案金鑰前，這段仍會載入但不會初始化 app，App 會自動退回本機（localStorage）模式。
+  import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+  import {
+    getAuth, onAuthStateChanged,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    signOut, updateProfile, setPersistence, browserLocalPersistence,
+    GoogleAuthProvider, signInWithPopup
+  } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+  import {
+    getFirestore, doc, setDoc, getDoc, collection, addDoc,
+    onSnapshot, query, orderBy, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+  window.__firebaseSdk = {
+    initializeApp, getApps,
+    getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
+    signInWithEmailAndPassword, signOut, updateProfile,
+    setPersistence, browserLocalPersistence,
+    GoogleAuthProvider, signInWithPopup,
+    getFirestore, doc, setDoc, getDoc, collection, addDoc,
+    onSnapshot, query, orderBy, serverTimestamp,
+  };
+  window.__firebaseSdkLoadFailed = false;
+  clearTimeout(window.__firebaseSdkTimeoutId);
+  window.dispatchEvent(new Event('firebase-sdk-ready'));
+</script>
+<style>
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: local('JetBrains Mono');
+  }
+
+  :root{
+    --ink: #1c1c1a;
+    --ink-soft: #38372f;
+    --paper: #f6f3ea;
+    --paper-dim: #ece7d8;
+    --machine: #232320;
+    --machine-2: #2f2f2b;
+    --steel: #8b8a7f;
+    --steel-light: #c9c6b6;
+    --green: #2d6a4f;
+    --green-deep: #1c4835;
+    --red: #a4303f;
+    --red-deep: #732029;
+    --amber: #d99a2b;
+    --amber-glow: #f0b94a;
+    --line: rgba(28,28,26,0.14);
+    --shadow: 0 18px 40px -18px rgba(0,0,0,0.35);
+  }
+
+  *{ box-sizing: border-box; }
+
+  html,body{
+    margin:0; padding:0;
+    background: #d8d4c4;
+    background-image:
+      radial-gradient(circle at 20% 15%, rgba(255,255,255,0.4), transparent 45%),
+      radial-gradient(circle at 80% 85%, rgba(0,0,0,0.06), transparent 50%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  .mono{ font-family: "JetBrains Mono", "Courier New", monospace; }
+
+  /* ---------- APP SHELL ---------- */
+  .app{
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .brand{
+    display:flex; align-items:center; gap: 12px;
+  }
+  .brand-mark{
+    width: 42px; height: 42px;
+    background: var(--ink);
+    color: var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    font-weight: 700; font-size: 18px;
+    border-radius: 4px;
+    letter-spacing: -1px;
+  }
+  .brand-text h1{
+    margin: 0; font-size: 19px; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .brand-text p{
+    margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); letter-spacing: 1px;
+  }
+
+  .user-chip{
+    display:flex; align-items:center; gap:10px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px 6px 6px;
+    font-size: 13px;
+  }
+  .user-chip .dot{
+    width: 26px; height:26px; border-radius:50%;
+    background: var(--amber);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 12px; font-weight:700; color:#4a3208;
+  }
+  .user-chip button{
+    background:none; border:none; color: var(--ink-soft); font-size:12px;
+    cursor:pointer; text-decoration: underline; padding:0;
+  }
+
+  /* login screen */
+  .login-wrap{
+    max-width: 420px;
+    margin: 10vh auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 40px 36px;
+    box-shadow: var(--shadow);
+    text-align:center;
+  }
+  .login-wrap .brand-mark{ margin: 0 auto 18px; }
+  .login-wrap h2{ margin: 0 0 6px; font-size: 20px; }
+  .login-wrap p{ margin: 0 0 28px; color: var(--ink-soft); font-size: 13px; }
+  .login-wrap input{
+    width:100%; padding: 12px 14px; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: #fff; margin-bottom: 12px;
+    font-family: inherit;
+  }
+  .login-wrap input:focus{ outline: 2px solid var(--ink); outline-offset:1px; }
+  .btn-primary{
+    width:100%; padding: 13px; font-size:14px; font-weight:700;
+    background: var(--ink); color: var(--paper); border:none; border-radius: 6px;
+    cursor:pointer; letter-spacing: 0.5px;
+    transition: transform .12s ease;
+  }
+  .btn-primary:hover{ transform: translateY(-1px); }
+  .btn-primary:active{ transform: translateY(0); }
+
+  /* main grid */
+  .layout{
+    display:grid;
+    grid-template-columns: 1fr 420px;
+    gap: 24px;
+    align-items:start;
+  }
+  @media (max-width: 920px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    overflow:hidden;
+  }
+
+  .tabs{
+    display:flex;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab{
+    flex:1;
+    padding: 16px;
+    text-align:center;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: var(--paper-dim);
+    color: var(--ink-soft);
+    cursor:pointer;
+    border:none;
+    border-bottom: 3px solid transparent;
+    transition: all .15s ease;
+  }
+  .tab.active{
+    background: var(--paper);
+    color: var(--ink);
+    border-bottom-color: var(--amber);
+  }
+  .tab:hover:not(.active){ background: #e2ddc9; }
+
+  .tab-body{ padding: 24px; }
+
+  .field{ margin-bottom: 18px; }
+  .field label{
+    display:block; font-size: 12px; font-weight: 700; margin-bottom: 6px;
+    color: var(--ink-soft); letter-spacing: 0.3px;
+  }
+  .field input[type=text], .field input[type=number], .field textarea, .field select{
+    width:100%; padding: 10px 12px; font-size: 14px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background:#fff; font-family: inherit; color: var(--ink);
+  }
+  .field textarea{ resize: vertical; min-height: 64px; }
+  .field input:focus, .field textarea:focus, .field select:focus{
+    outline: 2px solid var(--ink); outline-offset: 1px;
+  }
+
+  .slider-row{
+    display:flex; align-items:center; gap: 14px;
+  }
+  .slider-row input[type=range]{
+    flex:1; accent-color: var(--ink);
+  }
+  .slider-val{
+    width: 52px; text-align:center; font-weight:700;
+    background: var(--ink); color: var(--paper); border-radius: 6px;
+    padding: 8px 0; font-size: 14px;
+  }
+  .baseline-note{
+    font-size: 12px; color: var(--ink-soft); margin-top: 6px;
+  }
+  .baseline-note b{ color: var(--ink); }
+
+  .achieve-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .achieve-item{
+    display:flex; align-items:center; gap:10px;
+    background:#fff; border:1px solid var(--line); border-radius:6px; padding: 9px 12px;
+    font-size: 13px;
+  }
+  .achieve-item input[type=checkbox]{ width:16px; height:16px; accent-color: var(--green); }
+  .achieve-item .remove{
+    margin-left:auto; background:none; border:none; color: var(--red);
+    cursor:pointer; font-size: 16px; line-height:1; padding: 0 4px;
+  }
+  .add-achieve{ display:flex; gap:8px; }
+  .add-achieve input{ flex:1; }
+  .add-achieve button{
+    padding: 0 16px; background: var(--paper-dim); border:1px solid var(--line);
+    border-radius:6px; cursor:pointer; font-size:13px; font-weight:700; white-space:nowrap;
+  }
+  .add-achieve button:hover{ background: #e2ddc9; }
+
+  .subject-grid{
+    display:grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .subject-row{
+    display:flex; align-items:center; gap: 10px;
+    background:#fff; border:1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .subject-row label{ font-size:13px; font-weight:700; width: 40px; flex-shrink:0; color: var(--ink-soft); }
+  .subject-row input{ border:none; padding:4px; font-size:14px; width:100%; background:transparent; text-align:right; }
+  .subject-row input:focus{ outline:none; }
+
+  .exam-type-row{ display:flex; gap:8px; margin-bottom: 18px; }
+  .exam-type-btn{
+    flex:1; padding: 9px; border:1px solid var(--line); border-radius:6px;
+    background:#fff; font-size: 13px; cursor:pointer; font-weight:700; color: var(--ink-soft);
+  }
+  .exam-type-btn.active{ background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .summary-strip{
+    display:flex; gap: 14px; margin: 4px 0 18px;
+    padding: 12px 14px; background: var(--paper-dim); border-radius: 6px;
+    font-size: 13px;
+  }
+  .summary-strip div{ flex:1; text-align:center; }
+  .summary-strip .num{ display:block; font-size: 18px; font-weight:700; margin-top:2px; }
+
+  .checkout-btn{
+    width:100%; padding: 16px; font-size: 15px; font-weight:700;
+    background: var(--green); color:#fff; border:none; border-radius:8px;
+    cursor:pointer; letter-spacing: 1px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    transition: transform .12s ease, box-shadow .12s ease;
+    box-shadow: 0 6px 14px -6px rgba(45,106,79,0.5);
+  }
+  .checkout-btn.negative{ background: var(--red); box-shadow: 0 6px 14px -6px rgba(164,48,63,0.5); }
+  .checkout-btn:hover{ transform: translateY(-1px); }
+  .checkout-btn:disabled{ background: var(--steel); cursor:not-allowed; box-shadow:none; transform:none; }
+  .err-msg{
+    color: var(--red); font-size: 12px; margin-top: 8px; text-align:center; min-height: 16px;
+  }
+
+  /* ---------- MACHINE + INVOICE COLUMN ---------- */
+  .machine-col{
+    position: sticky; top: 20px;
+    display:flex; flex-direction:column; align-items:center;
+    gap: 0;
+  }
+
+  .machine{
+    width: 100%;
+    max-width: 380px;
+    background: linear-gradient(180deg, var(--machine-2), var(--machine));
+    border-radius: 16px 16px 6px 6px;
+    padding: 18px 18px 0;
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.08);
+    position: relative;
+    z-index: 2;
+  }
+  .machine-top{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom: 14px;
+  }
+  .machine-label{
+    color: #d8d5c8; font-size: 11px; letter-spacing: 2px; font-weight:700;
+  }
+  .led-row{ display:flex; gap:6px; align-items:center; }
+  .led{
+    width:8px; height:8px; border-radius:50%;
+    background: #4a4a44;
+    transition: all .2s ease;
+  }
+  .led.on{
+    background: var(--amber-glow);
+    box-shadow: 0 0 8px 2px rgba(240,185,74,0.7);
+  }
+  .led.on.green{ background:#5fd88a; box-shadow: 0 0 8px 2px rgba(95,216,138,0.7); }
+
+  .slot{
+    background: #141412;
+    border-radius: 8px 8px 0 0;
+    height: 22px;
+    position: relative;
+    box-shadow: inset 0 4px 8px rgba(0,0,0,0.6);
+  }
+  .slot::before{
+    content:'';
+    position:absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    width: 70%; height: 3px; background: #000; border-radius: 2px;
+  }
+
+  .paper-exit{
+    width: 100%;
+    max-width: 380px;
+    overflow: visible;
+    position: relative;
+    display:flex; justify-content:center;
+    min-height: 4px;
+  }
+
+  .invoice-slide-area{
+    width: 88%;
+    position: relative;
+    z-index: 1;
+    margin-top: -2px;
+  }
+
+  .invoice-paper{
+    background: var(--paper);
+    width: 100%;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,0.4);
+    transform-origin: top center;
+    animation: printOut 0.9s cubic-bezier(.2,.8,.3,1) forwards;
+    overflow: hidden;
+    clip-path: polygon(
+      0% 8px, 4% 0%, 8% 8px, 12% 0%, 16% 8px, 20% 0%, 24% 8px, 28% 0%, 32% 8px, 36% 0%,
+      40% 8px, 44% 0%, 48% 8px, 52% 0%, 56% 8px, 60% 0%, 64% 8px, 68% 0%, 72% 8px, 76% 0%,
+      80% 8px, 84% 0%, 88% 8px, 92% 0%, 96% 8px, 100% 0%,
+      100% 100%, 0% 100%
+    );
+  }
+  @keyframes printOut{
+    0%{ clip-path: inset(0 0 100% 0); }
+    100%{ clip-path: inset(0 0 0% 0); }
+  }
+
+  .invoice-inner{ padding: 22px 20px 26px; }
+
+  .invoice-head{ text-align:center; margin-bottom: 14px; }
+  .invoice-head .store{
+    font-size: 15px; font-weight:700; letter-spacing:1px;
+  }
+  .invoice-head .sub{
+    font-size: 10px; color: var(--ink-soft); margin-top:2px; letter-spacing:1px;
+  }
+  .invoice-dashed{
+    border-top: 1.5px dashed var(--steel);
+    margin: 12px 0;
+  }
+  .invoice-meta{
+    font-size: 11px; color: var(--ink-soft); display:flex; justify-content:space-between;
+    margin-bottom: 4px;
+  }
+  .invoice-line{
+    display:flex; justify-content:space-between; font-size: 12.5px; margin: 5px 0;
+    gap: 10px;
+  }
+  .invoice-line .name{ flex:1; }
+  .invoice-line .amt{ font-weight:700; white-space:nowrap; }
+  .invoice-total{
+    display:flex; justify-content:space-between; font-size: 16px; font-weight:700;
+    margin-top: 12px; padding-top: 10px; border-top: 1.5px dashed var(--steel);
+  }
+  .invoice-total .amt.pos{ color: var(--green-deep); }
+  .invoice-total .amt.neg{ color: var(--red-deep); }
+
+  .barcode{
+    margin: 16px auto 6px;
+    height: 44px;
+    display:flex; align-items:flex-end; justify-content:center; gap: 1.5px;
+  }
+  .barcode div{ background: var(--ink); width: 2px; }
+
+  .invoice-footer{
+    text-align:center; font-size: 10px; color: var(--ink-soft); letter-spacing: 2px; margin-top: 6px;
+  }
+
+  .stamp{
+    position:absolute;
+    top: 40%; left: 50%;
+    transform: translate(-50%,-50%) rotate(-14deg) scale(0);
+    border: 3px solid var(--red-deep);
+    color: var(--red-deep);
+    font-weight: 700; font-size: 20px;
+    padding: 6px 16px;
+    border-radius: 8px;
+    opacity: 0;
+    letter-spacing: 2px;
+    animation: stampIn .4s ease forwards;
+    animation-delay: 1s;
+    pointer-events:none;
+  }
+  @keyframes stampIn{
+    0%{ opacity:0; transform: translate(-50%,-50%) rotate(-14deg) scale(2); }
+    60%{ opacity: 0.85; transform: translate(-50%,-50%) rotate(-14deg) scale(0.9); }
+    100%{ opacity: 0.85; transform: translate(-50%,-50%) rotate(-14deg) scale(1); }
+  }
+
+  .invoice-actions{
+    display:flex; gap: 10px; margin-top: 18px;
+    opacity: 0; animation: fadeUp .4s ease forwards; animation-delay: 1.3s;
+  }
+  @keyframes fadeUp{
+    from{ opacity:0; transform: translateY(8px); }
+    to{ opacity:1; transform: translateY(0); }
+  }
+  .invoice-actions button{
+    flex:1; padding: 10px; font-size: 12.5px; font-weight:700;
+    border-radius: 6px; cursor:pointer; border: 1px solid var(--ink);
+    background: transparent; color: var(--ink);
+  }
+  .invoice-actions button:hover{ background: var(--ink); color: var(--paper); }
+
+  .idle-hint{
+    color: var(--steel); font-size: 12px; text-align:center; padding: 26px 10px;
+    max-width: 380px;
+  }
+
+  /* ---------- STATS / HISTORY ---------- */
+  .stats-grid{
+    display:grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px;
+  }
+  .stat-card{
+    background: var(--paper-dim); border-radius: 8px; padding: 14px; text-align:center;
+  }
+  .stat-card .label{ font-size: 11px; color: var(--ink-soft); font-weight:700; }
+  .stat-card .value{ font-size: 22px; font-weight:700; margin-top: 4px; }
+  .stat-card .value.pos{ color: var(--green-deep); }
+  .stat-card .value.neg{ color: var(--red-deep); }
+
+  .chart-wrap{ margin-bottom: 24px; }
+  .bar-row{ display:flex; align-items:center; gap: 10px; margin-bottom: 8px; font-size: 12px; }
+  .bar-row .bar-label{ width: 70px; flex-shrink:0; color: var(--ink-soft); text-align:right; }
+  .bar-track{ flex:1; background: var(--paper-dim); border-radius: 4px; height: 18px; overflow:hidden; position:relative; }
+  .bar-fill{ height:100%; border-radius: 4px; transition: width .5s ease; }
+  .bar-row .bar-val{ width: 46px; font-weight:700; }
+
+  .wall-title{ font-size: 14px; font-weight:700; margin: 4px 0 14px; display:flex; align-items:center; gap:8px; }
+  .wall-title .count{ font-size: 12px; color: var(--ink-soft); font-weight:400; }
+
+  .history-list{ display:flex; flex-direction:column; gap: 10px; max-height: 480px; overflow-y:auto; padding-right: 4px; }
+  .history-item{
+    background:#fff; border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; display:flex; align-items:center; gap: 12px; cursor:pointer;
+    transition: border-color .15s ease;
+  }
+  .history-item:hover{ border-color: var(--steel); }
+  .history-badge{
+    width: 34px; height:34px; border-radius:6px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700;
+  }
+  .history-badge.a{ background: #e4ede8; color: var(--green-deep); }
+  .history-badge.b{ background: #f2e6dd; color: #8a4a1f; }
+  .history-detail{ flex:1; min-width:0; }
+  .history-detail .t1{ font-size: 13px; font-weight:700; }
+  .history-detail .t2{ font-size: 11px; color: var(--ink-soft); }
+  .history-amt{ font-weight:700; font-size: 14px; }
+  .history-amt.pos{ color: var(--green-deep); }
+  .history-amt.neg{ color: var(--red-deep); }
+  .empty-hint{ text-align:center; color: var(--steel); font-size: 13px; padding: 30px 10px; }
+
+  .modal-backdrop{
+    position:fixed; inset:0; background: rgba(20,20,18,0.55);
+    display:flex; align-items:center; justify-content:center; z-index: 50;
+    padding: 20px;
+  }
+  .modal-box{
+    background: var(--paper); border-radius: 10px; max-width: 380px; width:100%;
+    max-height: 85vh; overflow-y:auto; box-shadow: var(--shadow);
+  }
+  .modal-close-bar{ display:flex; justify-content:flex-end; padding: 10px 10px 0; }
+  .modal-close-bar button{
+    background:none; border:none; font-size: 20px; cursor:pointer; color: var(--ink-soft); line-height:1;
+  }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
+
+  /* ---------- FIREBASE SETUP / AUTH ---------- */
+  .btn-google{
+    width:100%; display:flex; align-items:center; justify-content:center; gap: 10px;
+    padding: 12px; font-size: 14px; font-weight:700;
+    background: #fff; color: #3c4043; border: 1px solid var(--line); border-radius: 6px;
+    cursor:pointer; margin-bottom: 16px; font-family: inherit;
+    transition: box-shadow .15s ease, background .15s ease;
+  }
+  .btn-google:hover{ box-shadow: 0 1px 6px rgba(0,0,0,0.15); background: #fafafa; }
+  .btn-google:disabled{ opacity: 0.55; cursor:not-allowed; box-shadow:none; }
+
+  .auth-divider{
+    display:flex; align-items:center; gap: 12px;
+    margin: 4px 0 18px; color: var(--steel); font-size: 11.5px;
+  }
+  .auth-divider::before, .auth-divider::after{
+    content:''; flex:1; height:1px; background: var(--line);
+  }
+
+  .auth-tabs{
+    display:flex; gap:6px; margin-bottom: 22px;
+    background: var(--paper-dim); border-radius: 8px; padding: 4px;
+  }
+  .auth-tab{
+    flex:1; padding: 9px; font-size: 13px; font-weight:700;
+    background: transparent; border:none; border-radius: 6px; cursor:pointer;
+    color: var(--ink-soft);
+  }
+  .auth-tab.active{ background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+
+  .auth-error{
+    background: #fbe9e9; color: var(--red-deep); font-size: 12.5px;
+    padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; text-align:left;
+  }
+  .auth-note{
+    font-size: 11.5px; color: var(--steel); margin-top: 14px; line-height:1.6;
+  }
+  .btn-primary:disabled{ opacity: 0.55; cursor:not-allowed; transform:none; }
+
+  .sync-chip{
+    display:flex; align-items:center; gap:6px; font-size: 11px; color: var(--ink-soft);
+    padding: 4px 10px; border-radius: 999px; background: var(--paper-dim);
+  }
+  .sync-chip .sdot{ width:7px; height:7px; border-radius:50%; background: var(--steel); flex-shrink:0; }
+  .sync-chip.online .sdot{ background: #3f9d5e; box-shadow: 0 0 5px 1px rgba(63,157,94,0.5); }
+  .sync-chip.local .sdot{ background: var(--amber); }
+  .sync-chip.error .sdot{ background: var(--red); }
+
+  .setup-wrap{
+    max-width: 480px; margin: 6vh auto; background: var(--paper);
+    border: 1px solid var(--line); border-radius: 10px; padding: 34px 32px;
+    box-shadow: var(--shadow);
+  }
+  .setup-wrap h2{ margin: 0 0 8px; font-size: 19px; text-align:center; }
+  .setup-wrap > p{ margin: 0 0 24px; color: var(--ink-soft); font-size: 13px; text-align:center; line-height:1.6; }
+  .setup-wrap .field label{ font-size: 12px; }
+  .setup-wrap textarea.config-input{
+    width:100%; min-height: 150px; font-family: "JetBrains Mono","Courier New",monospace;
+    font-size: 12.5px; padding: 12px; border:1px solid var(--line); border-radius: 6px;
+    background:#fff; line-height:1.6;
+  }
+  .setup-actions{ display:flex; gap:10px; margin-top: 16px; }
+  .setup-actions .btn-primary{ flex:1; }
+  .btn-ghost{
+    flex:1; padding: 13px; font-size:14px; font-weight:700; background:transparent;
+    border: 1px solid var(--line); border-radius: 6px; cursor:pointer; color: var(--ink-soft);
+  }
+  .btn-ghost:hover{ background: var(--paper-dim); }
+  .setup-help{
+    margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--line);
+    font-size: 12px; color: var(--ink-soft); line-height: 1.8;
+  }
+  .setup-help ol{ margin: 6px 0 0; padding-left: 18px; }
+  .setup-help code{
+    background: var(--paper-dim); padding: 1px 5px; border-radius: 4px; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ---------------- audio: synthesize a thermal printer chatter ---------------- */
+function usePrinterSound(){
+  const ctxRef = useRef(null);
+  const play = () => {
+    try{
+      if(!ctxRef.current){
+        ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = ctxRef.current;
+      if(ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+      const ticks = 14;
+      for(let i=0;i<ticks;i++){
+        const t = now + i*0.055;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1800 + Math.random()*400, t);
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.045, t+0.005);
+        gain.gain.exponentialRampToValueAtTime(0.001, t+0.045);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t+0.05);
+      }
+      // final stamp thunk
+      const thunkT = now + ticks*0.055 + 0.9;
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(120, thunkT);
+      gain2.gain.setValueAtTime(0.08, thunkT);
+      gain2.gain.exponentialRampToValueAtTime(0.001, thunkT+0.15);
+      osc2.connect(gain2).connect(ctx.destination);
+      osc2.start(thunkT);
+      osc2.stop(thunkT+0.16);
+    }catch(e){ /* audio not available */ }
+  };
+  return play;
+}
+
+function vibrate(){
+  if(navigator.vibrate){ navigator.vibrate([12,20,12,20,12]); }
+}
+
+/* ---------------- local storage (fallback / offline cache) ---------------- */
+const FIREBASE_CFG_KEY = 'pos_firebase_config_v1';
+const LOCAL_STORE_KEY = 'pos_invoices_local_v1';
+const LOCAL_BASELINE_KEY = 'pos_baseline_local_v1';
+const LOCAL_USER_KEY = 'pos_local_user_v1';
+
+function loadFirebaseConfig(){
+  try{
+    const raw = localStorage.getItem(FIREBASE_CFG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function saveFirebaseConfig(cfg){
+  try{ localStorage.setItem(FIREBASE_CFG_KEY, JSON.stringify(cfg)); }catch(e){}
+}
+function clearFirebaseConfig(){
+  try{ localStorage.removeItem(FIREBASE_CFG_KEY); }catch(e){}
+}
+
+function loadLocalInvoices(){
+  try{
+    const raw = localStorage.getItem(LOCAL_STORE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveLocalInvoices(list){
+  try{ localStorage.setItem(LOCAL_STORE_KEY, JSON.stringify(list)); }catch(e){}
+}
+function loadLocalBaseline(){
+  try{
+    const raw = localStorage.getItem(LOCAL_BASELINE_KEY);
+    return raw ? JSON.parse(raw) : 50;
+  }catch(e){ return 50; }
+}
+function saveLocalBaseline(v){
+  try{ localStorage.setItem(LOCAL_BASELINE_KEY, JSON.stringify(v)); }catch(e){}
+}
+
+function fmtMoney(n){
+  const sign = n >= 0 ? '+' : '-';
+  return sign + '$' + Math.abs(Math.round(n)).toLocaleString();
+}
+function fmtDate(ts){
+  const d = new Date(ts);
+  const pad = x => String(x).padStart(2,'0');
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function invoiceNo(ts){
+  return 'AB-' + String(ts).slice(-8);
+}
+
+/* ---------------- Barcode (decorative, deterministic from string) ---------------- */
+function Barcode({ seed }){
+  const bars = useMemo(()=>{
+    let s = 0;
+    for(let i=0;i<seed.length;i++){ s = (s*31 + seed.charCodeAt(i)) >>> 0; }
+    const arr = [];
+    for(let i=0;i<38;i++){
+      s = (s*1103515245 + 12345) >>> 0;
+      const w = 1 + (s % 3);
+      const h = 18 + (s % 26);
+      arr.push({w,h});
+    }
+    return arr;
+  },[seed]);
+  return (
+    <div className="barcode">
+      {bars.map((b,i)=>(
+        <div key={i} style={{width:b.w+'px', height:b.h+'px'}}></div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Firebase 錯誤訊息中文化 ---------------- */
+function translateAuthError(code){
+  const map = {
+    'auth/email-already-in-use': '這個電子郵件已經註冊過了，請直接登入',
+    'auth/invalid-email': '電子郵件格式不正確',
+    'auth/weak-password': '密碼太短，至少需要 6 個字元',
+    'auth/user-not-found': '找不到這個帳號，請確認電子郵件或先註冊',
+    'auth/wrong-password': '密碼錯誤，請再試一次',
+    'auth/invalid-credential': '電子郵件或密碼錯誤，請再試一次',
+    'auth/too-many-requests': '嘗試太多次了，請稍後再試',
+    'auth/network-request-failed': '網路連線失敗，請檢查網路後再試',
+    'auth/popup-closed-by-user': '登入視窗被關閉了，請再試一次',
+    'auth/cancelled-popup-request': '登入視窗被關閉了，請再試一次',
+    'auth/popup-blocked': '瀏覽器擋住了登入彈出視窗，請允許彈出視窗後再試一次',
+    'auth/account-exists-with-different-credential': '這個電子郵件已經用其他方式註冊過了，請改用原本的登入方式',
+    'auth/unauthorized-domain': '這個網址尚未加入 Firebase 授權網域，請到 Authentication 設定中新增',
+    'auth/operation-not-allowed': 'Google 登入尚未在 Firebase 專案中啟用，請先到 Authentication 設定開啟',
+  };
+  return map[code] || ('登入發生問題（' + (code || '未知錯誤') + '），請再試一次');
+}
+
+/* ---------------- Firebase 專案設定畫面 ---------------- */
+function FirebaseSetup({ onSaved, onSkip }){
+  const [raw, setRaw] = useState('');
+  const [err, setErr] = useState('');
+
+  const handleSave = () => {
+    setErr('');
+    if(!raw.trim()){
+      setErr('請貼上 Firebase 專案設定物件');
+      return;
+    }
+    try{
+      // 允許使用者直接貼上 `const firebaseConfig = {...}` 或純物件
+      let text = raw.trim();
+      const objStart = text.indexOf('{');
+      const objEnd = text.lastIndexOf('}');
+      if(objStart === -1 || objEnd === -1) throw new Error('找不到 { } 物件內容');
+      text = text.slice(objStart, objEnd+1);
+      // 把物件字面量轉成合法 JSON：幫沒加引號的 key 補上引號
+      const jsonish = text.replace(/([{,]\s*)([A-Za-z0-9_]+)(\s*:)/g, '$1"$2"$3');
+      const parsed = JSON.parse(jsonish);
+      if(!parsed.apiKey || !parsed.projectId){
+        throw new Error('設定內容缺少 apiKey 或 projectId');
+      }
+      saveFirebaseConfig(parsed);
+      onSaved(parsed);
+    }catch(e){
+      setErr('無法解析設定內容，請確認完整貼上 firebaseConfig 物件（' + e.message + '）');
+    }
+  };
+
+  return (
+    <div className="setup-wrap">
+      <div className="brand-mark" style={{margin:'0 auto 18px'}}>POS</div>
+      <h2>連接 Firebase 雲端帳號</h2>
+      <p>貼上你的 Firebase 專案設定，即可啟用電子郵件登入與跨裝置同步。也可以先略過，僅使用本機儲存。</p>
+
+      <div className="field">
+        <label>Firebase 設定物件（firebaseConfig）</label>
+        <textarea
+          className="config-input"
+          placeholder={'{\n  apiKey: "...",\n  authDomain: "...",\n  projectId: "...",\n  storageBucket: "...",\n  messagingSenderId: "...",\n  appId: "..."\n}'}
+          value={raw}
+          onChange={e=>setRaw(e.target.value)}
+        />
+      </div>
+      {err && <div className="auth-error">{err}</div>}
+
+      <div className="setup-actions">
+        <button className="btn-ghost" onClick={onSkip}>略過，使用本機儲存</button>
+        <button className="btn-primary" onClick={handleSave}>儲存並連接</button>
+      </div>
+
+      <div className="setup-help">
+        取得設定的方式：
+        <ol>
+          <li>到 <code>firebase.google.com/console</code> 建立專案</li>
+          <li>專案設定 → 新增「網頁應用程式」</li>
+          <li>複製畫面上的 <code>firebaseConfig</code> 物件貼到上面</li>
+          <li>到 Authentication 開啟「電子郵件/密碼」與「Google」登入方式</li>
+          <li>到 Firestore Database 建立資料庫（測試模式即可開始）</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 登入 / 註冊（Firebase） ---------------- */
+function AuthScreen({ fb, onLocalMode }){
+  const [mode, setMode] = useState('signin'); // signin | signup
+  const [nickname, setNickname] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  const handleSubmit = async () => {
+    setErr('');
+    if(!email.trim() || !password){
+      setErr('請輸入電子郵件與密碼');
+      return;
+    }
+    if(mode === 'signup' && !nickname.trim()){
+      setErr('請輸入暱稱');
+      return;
+    }
+    if(password.length < 6){
+      setErr('密碼至少需要 6 個字元');
+      return;
+    }
+    setBusy(true);
+    try{
+      const sdk = window.__firebaseSdk;
+      await sdk.setPersistence(fb.auth, sdk.browserLocalPersistence);
+      if(mode === 'signup'){
+        const cred = await sdk.createUserWithEmailAndPassword(fb.auth, email.trim(), password);
+        await sdk.updateProfile(cred.user, { displayName: nickname.trim() });
+        await sdk.setDoc(sdk.doc(fb.db, 'users', cred.user.uid), {
+          nickname: nickname.trim(),
+          email: email.trim(),
+          baseline: 50,
+          createdAt: sdk.serverTimestamp(),
+        });
+      }else{
+        await sdk.signInWithEmailAndPassword(fb.auth, email.trim(), password);
+      }
+    }catch(e){
+      setErr(translateAuthError(e.code));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setErr('');
+    setGoogleBusy(true);
+    try{
+      const sdk = window.__firebaseSdk;
+      await sdk.setPersistence(fb.auth, sdk.browserLocalPersistence);
+      const provider = new sdk.GoogleAuthProvider();
+      const cred = await sdk.signInWithPopup(fb.auth, provider);
+      const user = cred.user;
+      // 第一次用 Google 登入時，在 Firestore 建立對應的使用者資料（若已存在則不覆蓋 baseline）
+      const userDocRef = sdk.doc(fb.db, 'users', user.uid);
+      const existing = await sdk.getDoc(userDocRef);
+      if(!existing.exists()){
+        await sdk.setDoc(userDocRef, {
+          nickname: user.displayName || '同學',
+          email: user.email || '',
+          baseline: 50,
+          createdAt: sdk.serverTimestamp(),
+        });
+      }
+    }catch(e){
+      setErr(translateAuthError(e.code));
+    }
+    setGoogleBusy(false);
+  };
+
+  return (
+    <div className="login-wrap">
+      <div className="brand-mark">POS</div>
+      <h2>學習能量補給站</h2>
+      <p>登入後開始記錄你的學習行動與成績發票，資料會同步到雲端</p>
+
+      <button className="btn-google" onClick={handleGoogleSignIn} disabled={googleBusy || busy}>
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.9c1.7-1.57 2.7-3.88 2.7-6.64z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.27c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.34C2.44 15.98 5.48 18 9 18z"/>
+          <path fill="#FBBC05" d="M3.95 10.69A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.69V4.97H.96A9 9 0 000 9c0 1.45.35 2.83.96 4.03l2.99-2.34z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/>
+        </svg>
+        {googleBusy ? '登入中…' : '使用 Google 帳號登入'}
+      </button>
+
+      <div className="auth-divider"><span>或使用電子郵件</span></div>
+
+      <div className="auth-tabs">
+        <button className={"auth-tab " + (mode==='signin'?'active':'')} onClick={()=>{setMode('signin'); setErr('');}}>登入</button>
+        <button className={"auth-tab " + (mode==='signup'?'active':'')} onClick={()=>{setMode('signup'); setErr('');}}>註冊新帳號</button>
+      </div>
+
+      {mode === 'signup' && (
+        <input
+          type="text" placeholder="暱稱"
+          value={nickname} onChange={e=>setNickname(e.target.value)}
+        />
+      )}
+      <input
+        type="text" placeholder="電子郵件"
+        value={email} onChange={e=>setEmail(e.target.value)}
+        onKeyDown={e=>{ if(e.key==='Enter') handleSubmit(); }}
+      />
+      <input
+        type="password" placeholder="密碼（至少 6 個字元）"
+        value={password} onChange={e=>setPassword(e.target.value)}
+        onKeyDown={e=>{ if(e.key==='Enter') handleSubmit(); }}
+      />
+
+      {err && <div className="auth-error">{err}</div>}
+
+      <button className="btn-primary" onClick={handleSubmit} disabled={busy || googleBusy}>
+        {busy ? '處理中…' : (mode === 'signup' ? '註冊並登入' : '登入')}
+      </button>
+
+      <div className="auth-note">
+        使用本機儲存（不需要帳號）？<button
+          onClick={onLocalMode}
+          style={{background:'none',border:'none',textDecoration:'underline',color:'var(--ink-soft)',cursor:'pointer',fontSize:'11.5px',padding:0}}
+        >改用本機模式</button>
+
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 本機模式登入（無 Firebase 設定時的備援） ---------------- */
+function LocalLogin({ onLogin, showFirebaseHint, onOpenSetup }){
+  const [name, setName] = useState('');
+  return (
+    <div className="login-wrap">
+      <div className="brand-mark">POS</div>
+      <h2>學習能量補給站</h2>
+      <p>登入後開始記錄你的學習行動與成績發票（本機儲存模式）</p>
+      <input
+        type="text"
+        placeholder="輸入你的暱稱"
+        value={name}
+        onChange={e=>setName(e.target.value)}
+        onKeyDown={e=>{ if(e.key==='Enter' && name.trim()) onLogin(name.trim()); }}
+      />
+      <button
+        className="btn-primary"
+        onClick={()=>{ if(name.trim()) onLogin(name.trim()); }}
+      >
+        登入 / 開始記錄
+      </button>
+      {showFirebaseHint && (
+        <div className="auth-note">
+          想要跨裝置同步資料？<button
+            onClick={onOpenSetup}
+            style={{background:'none',border:'none',textDecoration:'underline',color:'var(--ink-soft)',cursor:'pointer',fontSize:'11.5px',padding:0}}
+          >設定 Firebase 雲端帳號</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Module A: 行動值收銀 ---------------- */
+function ModuleA({ baseline, onSubmit }){
+  const [progress, setProgress] = useState('');
+  const [score, setScore] = useState(baseline);
+  const [achievements, setAchievements] = useState([]);
+  const [newAch, setNewAch] = useState('');
+  const [err, setErr] = useState('');
+
+  // 每次基準分數改變（例如剛結帳完、或跨裝置同步到新資料）時，把滑桿重設回基準值，
+  // 避免滑桿卡在舊分數，造成成長率計算與畫面顯示不一致
+  useEffect(()=>{ setScore(baseline); }, [baseline]);
+
+  // 成長率 Δ% = (本次-上次)/上次 × 100；結帳金額 = Δ% × 1000（Δ% 以「25」表示 25%）
+  // 範例核對：60→75 為 Δ%=25，結帳 $250 = 25 × 10；80→60 為 Δ%=-25，結帳 -$250 = -25 × 10
+  const deltaPercent = baseline > 0 ? ((score - baseline) / baseline) * 100 : 0;
+  const realAmount = deltaPercent * 10;
+
+  const toggleAch = (i) => {
+    setAchievements(list => list.map((a,idx)=> idx===i ? {...a, done: !a.done} : a));
+  };
+  const removeAch = (i) => {
+    setAchievements(list => list.filter((_,idx)=>idx!==i));
+  };
+  const addAch = () => {
+    if(!newAch.trim()) return;
+    setAchievements(list => [...list, { text: newAch.trim(), done: true }]);
+    setNewAch('');
+  };
+
+  const handleCheckout = () => {
+    if(!progress.trim()){
+      setErr('請先填寫讀書進度描述');
+      return;
+    }
+    setErr('');
+    const items = [
+      { name: `行動力評分 ${baseline} → ${score}`, amount: realAmount }
+    ];
+    achievements.filter(a=>a.done).forEach(a=>{
+      items.push({ name: `小成就：${a.text}`, amount: 0 });
+    });
+    onSubmit({
+      type: 'A',
+      title: '學習行動值收據',
+      progress,
+      baseline,
+      score,
+      achievements: achievements.filter(a=>a.done).map(a=>a.text),
+      items,
+      total: realAmount,
+    });
+    setProgress('');
+    setAchievements([]);
+  };
+
+  return (
+    <div>
+      <div className="field">
+        <label>讀書進度描述</label>
+        <textarea
+          placeholder="例如：完成數學第三章習題、複習英文單字 100 個…"
+          value={progress}
+          onChange={e=>setProgress(e.target.value)}
+        />
+      </div>
+
+      <div className="field">
+        <label>行動力評分（0～100）</label>
+        <div className="slider-row">
+          <input type="range" min="0" max="100" step="1" value={score}
+            onChange={e=>setScore(Number(e.target.value))} />
+          <div className="slider-val">{score}</div>
+        </div>
+        <div className="baseline-note">上一筆基準分數：<b>{baseline} 分</b>（本次成長率 <b>{deltaPercent.toFixed(1)}%</b>）</div>
+      </div>
+
+      <div className="field">
+        <label>小成就</label>
+        <div className="achieve-list">
+          {achievements.map((a,i)=>(
+            <div className="achieve-item" key={i}>
+              <input type="checkbox" checked={a.done} onChange={()=>toggleAch(i)} />
+              <span>{a.text}</span>
+              <button className="remove" aria-label="刪除" onClick={()=>removeAch(i)}>×</button>
+            </div>
+          ))}
+        </div>
+        <div className="add-achieve">
+          <input type="text" placeholder="新增小成就，例如：專注 45 分鐘不分心"
+            value={newAch} onChange={e=>setNewAch(e.target.value)}
+            onKeyDown={e=>{ if(e.key==='Enter') addAch(); }} />
+          <button onClick={addAch}>新增</button>
+        </div>
+      </div>
+
+      <div className="summary-strip">
+        <div>
+          <span>預估金額</span>
+          <span className="num" style={{color: realAmount>=0 ? 'var(--green-deep)' : 'var(--red-deep)'}}>
+            {fmtMoney(realAmount)}
+          </span>
+        </div>
+      </div>
+
+      <button
+        className={"checkout-btn " + (realAmount < 0 ? 'negative' : '')}
+        onClick={handleCheckout}
+      >
+        {realAmount >= 0 ? '結帳開立收據 ↑' : '登錄扣帳收據 ↓'}
+      </button>
+      <div className="err-msg">{err}</div>
+    </div>
+  );
+}
+
+/* ---------------- Module B: 成績登錄 ---------------- */
+const SUBJECT_LIST = [
+  { key: 'chinese', label: '國文' },
+  { key: 'english', label: '英文' },
+  { key: 'math', label: '數學' },
+  { key: 'science', label: '自然' },
+  { key: 'social', label: '社會' },
+];
+const EXAM_TYPES = ['週考', '段考', '模考'];
+
+function ModuleB({ onSubmit }){
+  const [examType, setExamType] = useState('段考');
+  const [scores, setScores] = useState({});
+  const [err, setErr] = useState('');
+
+  const filled = SUBJECT_LIST.filter(s => scores[s.key] !== undefined && scores[s.key] !== '');
+  const total = filled.reduce((sum,s)=> sum + Number(scores[s.key] || 0), 0);
+  const avg = filled.length ? total / filled.length : 0;
+
+  const handleChange = (key, val) => {
+    if(val === '' ){ setScores(prev=>({...prev, [key]: ''})); return; }
+    const n = Number(val);
+    if(Number.isNaN(n)) return;
+    setScores(prev => ({...prev, [key]: Math.max(0, Math.min(100, n))}));
+  };
+
+  const handleCheckout = () => {
+    if(filled.length === 0){
+      setErr('請至少輸入一科成績');
+      return;
+    }
+    setErr('');
+    const items = filled.map(s => ({
+      name: `${s.label} 成績`,
+      amount: Number(scores[s.key]),
+      isScore: true,
+    }));
+    onSubmit({
+      type: 'B',
+      title: `${examType}成績發票`,
+      examType,
+      scores: filled.map(s=>({ subject: s.label, score: Number(scores[s.key]) })),
+      items,
+      total: total,
+      avg,
+    });
+    setScores({});
+  };
+
+  return (
+    <div>
+      <div className="field">
+        <label>考試類別</label>
+        <div className="exam-type-row">
+          {EXAM_TYPES.map(t => (
+            <button key={t}
+              className={"exam-type-btn " + (examType===t ? 'active' : '')}
+              onClick={()=>setExamType(t)}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>各科成績</label>
+        <div className="subject-grid">
+          {SUBJECT_LIST.map(s => (
+            <div className="subject-row" key={s.key}>
+              <label htmlFor={'sub-'+s.key}>{s.label}</label>
+              <input
+                id={'sub-'+s.key}
+                type="number" min="0" max="100"
+                placeholder="—"
+                value={scores[s.key] === undefined ? '' : scores[s.key]}
+                onChange={e=>handleChange(s.key, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="summary-strip">
+        <div>
+          <span>總分</span>
+          <span className="num">{total}</span>
+        </div>
+        <div>
+          <span>平均</span>
+          <span className="num">{avg.toFixed(1)}</span>
+        </div>
+        <div>
+          <span>科目數</span>
+          <span className="num">{filled.length}</span>
+        </div>
+      </div>
+
+      <button className="checkout-btn" onClick={handleCheckout}>
+        登錄開立成績發票 ↑
+      </button>
+      <div className="err-msg">{err}</div>
+    </div>
+  );
+}
+
+/* ---------------- Invoice printout ---------------- */
+function InvoicePrintout({ invoice, onDone }){
+  const playSound = usePrinterSound();
+  const captureRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(()=>{
+    playSound();
+    vibrate();
+    const t = setTimeout(()=> setReady(true), 950);
+    return ()=> clearTimeout(t);
+  }, [invoice]);
+
+  const handleExport = async () => {
+    if(!captureRef.current) return;
+    try{
+      const canvas = await html2canvas(captureRef.current, { backgroundColor: '#f6f3ea', scale: 2 });
+      const link = document.createElement('a');
+      link.download = `發票_${invoiceNo(invoice.ts)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }catch(e){
+      alert('匯出失敗，請改用截圖保存');
+    }
+  };
+
+  const isPositive = invoice.total >= 0;
+
+  return (
+    <div className="paper-exit">
+      <div className="invoice-slide-area">
+        <div className="invoice-paper" ref={captureRef}>
+          <div className="invoice-inner">
+            <div className="invoice-head">
+              <div className="store">學習能量補給站</div>
+              <div className="sub">STUDY ENERGY STATION · 電子發票</div>
+            </div>
+            <div className="invoice-dashed"></div>
+            <div className="invoice-meta">
+              <span>{invoiceNo(invoice.ts)}</span>
+              <span>{fmtDate(invoice.ts)}</span>
+            </div>
+            <div className="invoice-meta">
+              <span>{invoice.title}</span>
+              <span>{invoice.type === 'A' ? '行動值' : invoice.examType}</span>
+            </div>
+            <div className="invoice-dashed"></div>
+
+            {invoice.items.map((it,i)=>(
+              <div className="invoice-line" key={i}>
+                <span className="name">{it.name}</span>
+                <span className="amt">
+                  {it.isScore ? it.amount + ' 分' : fmtMoney(it.amount)}
+                </span>
+              </div>
+            ))}
+
+            {invoice.type === 'B' && (
+              <div className="invoice-line" style={{fontWeight:700}}>
+                <span className="name">平均</span>
+                <span className="amt">{invoice.avg.toFixed(1)} 分</span>
+              </div>
+            )}
+
+            <div className="invoice-total">
+              <span>{invoice.type === 'A' ? '結帳金額' : '總分'}</span>
+              <span className={"amt " + (invoice.type==='A' ? (isPositive?'pos':'neg') : 'pos')}>
+                {invoice.type === 'A' ? fmtMoney(invoice.total) : invoice.total + ' 分'}
+              </span>
+            </div>
+
+            <Barcode seed={invoiceNo(invoice.ts)} />
+            <div className="invoice-footer">THANK YOU · 持續累積學習資產</div>
+          </div>
+
+          {ready && (
+            <div className="stamp">
+              {invoice.type === 'A' ? (isPositive ? '交易成功' : '已扣帳') : '登錄成功'}
+            </div>
+          )}
+        </div>
+
+        {ready && (
+          <div className="invoice-actions">
+            <button onClick={handleExport}>撕下發票（存 PNG）</button>
+            <button onClick={onDone}>繼續記錄</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Machine ---------------- */
+function Machine({ printing, currentInvoice, onDone }){
+  return (
+    <div className="machine-col">
+      <div className="machine">
+        <div className="machine-top">
+          <div className="machine-label">STUDY POS · 001</div>
+          <div className="led-row">
+            <div className={"led " + (printing ? 'on' : '')}></div>
+            <div className={"led " + (!printing ? 'on green' : '')}></div>
+          </div>
+        </div>
+        <div className="slot"></div>
+      </div>
+      {currentInvoice ? (
+        <InvoicePrintout invoice={currentInvoice} onDone={onDone} />
+      ) : (
+        <div className="idle-hint">左側填寫學習行動或成績後，點擊結帳即可看到發票印出</div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Stats + History ---------------- */
+function StatsAndHistory({ invoices }){
+  const [selected, setSelected] = useState(null);
+
+  const totalAssets = invoices
+    .filter(i=>i.type==='A')
+    .reduce((sum,i)=> sum + i.total, 0);
+
+  const examCount = invoices.filter(i=>i.type==='B').length;
+  const actionCount = invoices.filter(i=>i.type==='A').length;
+
+  const subjectAverages = useMemo(()=>{
+    const map = {};
+    invoices.filter(i=>i.type==='B').forEach(inv=>{
+      inv.scores.forEach(s=>{
+        if(!map[s.subject]) map[s.subject] = [];
+        map[s.subject].push(s.score);
+      });
+    });
+    return SUBJECT_LIST.map(s=>{
+      const arr = map[s.label] || [];
+      const avg = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+      return { label: s.label, avg };
+    });
+  }, [invoices]);
+
+  const colors = ['#2d6a4f','#a4303f','#d99a2b','#3f6b99','#7a4f99'];
+
+  return (
+    <div className="panel" style={{marginTop:20}}>
+      <div className="tab-body">
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="label">累積學習資產</div>
+            <div className={"value " + (totalAssets>=0?'pos':'neg')}>{fmtMoney(totalAssets)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="label">行動值筆數</div>
+            <div className="value">{actionCount}</div>
+          </div>
+          <div className="stat-card">
+            <div className="label">成績發票數</div>
+            <div className="value">{examCount}</div>
+          </div>
+        </div>
+
+        {examCount > 0 && (
+          <div className="chart-wrap">
+            <div className="wall-title">各科平均分</div>
+            {subjectAverages.map((s,i)=>(
+              <div className="bar-row" key={s.label}>
+                <div className="bar-label">{s.label}</div>
+                <div className="bar-track">
+                  <div className="bar-fill" style={{width: s.avg+'%', background: colors[i]}}></div>
+                </div>
+                <div className="bar-val">{s.avg.toFixed(1)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="wall-title">
+          歷史發票牆 <span className="count">共 {invoices.length} 張</span>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div className="empty-hint">還沒有發票紀錄，快去結帳開立第一張吧</div>
+        ) : (
+          <div className="history-list">
+            {[...invoices].reverse().map((inv, i) => (
+              <div className="history-item" key={inv.ts+'-'+i} onClick={()=>setSelected(inv)}>
+                <div className={"history-badge " + (inv.type==='A' ? 'a' : 'b')}>
+                  {inv.type==='A' ? '行' : '考'}
+                </div>
+                <div className="history-detail">
+                  <div className="t1">{inv.title}</div>
+                  <div className="t2">{fmtDate(inv.ts)}</div>
+                </div>
+                <div className={"history-amt " + (inv.type==='A' ? (inv.total>=0?'pos':'neg') : 'pos')}>
+                  {inv.type==='A' ? fmtMoney(inv.total) : inv.total+' 分'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div className="modal-backdrop" onClick={()=>setSelected(null)}>
+          <div className="modal-box" onClick={e=>e.stopPropagation()}>
+            <div className="modal-close-bar">
+              <button aria-label="關閉" onClick={()=>setSelected(null)}>×</button>
+            </div>
+            <div style={{padding: '0 16px 20px'}}>
+              <InvoicePrintout invoice={selected} onDone={()=>setSelected(null)} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Firebase app 初始化（只做一次） ---------------- */
+function useFirebase(config){
+  const [fb, setFb] = useState(null); // { app, auth, db } | { error } | null(尚未判斷)
+  const [sdkReady, setSdkReady] = useState(!!window.__firebaseSdk || !!window.__firebaseSdkLoadFailed);
+
+  useEffect(()=>{
+    if(sdkReady) return;
+    const onReady = () => setSdkReady(true);
+    window.addEventListener('firebase-sdk-ready', onReady);
+    return ()=> window.removeEventListener('firebase-sdk-ready', onReady);
+  }, [sdkReady]);
+
+  useEffect(()=>{
+    if(!sdkReady || !config) return;
+    if(window.__firebaseSdkLoadFailed || !window.__firebaseSdk){
+      setFb({ error: '無法載入 Firebase 服務，請確認網路連線可以連到 gstatic.com，或稍後再試一次' });
+      return;
+    }
+    try{
+      const sdk = window.__firebaseSdk;
+      const existing = sdk.getApps();
+      const app = existing.length ? existing[0] : sdk.initializeApp(config);
+      const auth = sdk.getAuth(app);
+      const db = sdk.getFirestore(app);
+      setFb({ app, auth, db });
+    }catch(e){
+      console.error('Firebase 初始化失敗', e);
+      setFb({ error: e.message || '設定內容有誤，請確認 apiKey / projectId 等欄位是否正確' });
+    }
+  }, [sdkReady, config]);
+
+  return fb;
+}
+
+/* ---------------- App ---------------- */
+function App(){
+  // 三種狀態：'checking'（判斷中）| 'needs-setup'（尚未設定 Firebase，顯示設定畫面或選擇本機模式）
+  // | 'firebase'（已設定 Firebase，走帳號登入）| 'local'（使用者選擇本機模式）
+  const [dataMode, setDataMode] = useState('checking');
+  const [firebaseConfig, setFirebaseConfig] = useState(null);
+
+  const [localUser, setLocalUser] = useState(null);
+  const [authUser, setAuthUser] = useState(undefined); // undefined=尚未確認, null=未登入, object=已登入
+
+  const [tab, setTab] = useState('A');
+  const [invoices, setInvoices] = useState([]);
+  const [baseline, setBaseline] = useState(50);
+  const [currentInvoice, setCurrentInvoice] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('local'); // local | online | error
+
+  const fb = useFirebase(firebaseConfig);
+
+  // 開機判斷：讀取是否已存過 Firebase 設定 / 本機使用者
+  useEffect(()=>{
+    const cfg = loadFirebaseConfig();
+    if(cfg){
+      setFirebaseConfig(cfg);
+      setDataMode('firebase');
+    }else{
+      const savedLocalUser = localStorage.getItem(LOCAL_USER_KEY);
+      if(savedLocalUser){
+        setLocalUser(savedLocalUser);
+        setDataMode('local');
+      }else{
+        setDataMode('needs-setup');
+      }
+    }
+  }, []);
+
+  // 本機模式：從 localStorage 載入資料
+  useEffect(()=>{
+    if(dataMode !== 'local') return;
+    setInvoices(loadLocalInvoices());
+    setBaseline(loadLocalBaseline());
+    setSyncStatus('local');
+  }, [dataMode]);
+
+  // Firebase 模式：監聽登入狀態
+  useEffect(()=>{
+    if(dataMode !== 'firebase' || !fb || fb.error) return;
+    const sdk = window.__firebaseSdk;
+    const unsub = sdk.onAuthStateChanged(fb.auth, (u)=>{
+      setAuthUser(u);
+    });
+    return unsub;
+  }, [dataMode, fb]);
+
+  // Firebase 模式：登入後即時監聽 Firestore 的發票清單與基準分數
+  useEffect(()=>{
+    if(dataMode !== 'firebase' || !fb || fb.error || !authUser) return;
+    const sdk = window.__firebaseSdk;
+    setSyncStatus('online');
+
+    const userDocRef = sdk.doc(fb.db, 'users', authUser.uid);
+    const unsubUser = sdk.onSnapshot(userDocRef,
+      (snap)=>{
+        const data = snap.data();
+        setBaseline(data && typeof data.baseline === 'number' ? data.baseline : 50);
+      },
+      (err)=>{ console.error(err); setSyncStatus('error'); }
+    );
+
+    const invoicesRef = sdk.collection(fb.db, 'users', authUser.uid, 'invoices');
+    const q = sdk.query(invoicesRef, sdk.orderBy('ts', 'asc'));
+    const unsubInvoices = sdk.onSnapshot(q,
+      (snap)=>{
+        const list = snap.docs.map(d => d.data());
+        setInvoices(list);
+        setSyncStatus('online');
+      },
+      (err)=>{ console.error(err); setSyncStatus('error'); }
+    );
+
+    return ()=>{ unsubUser(); unsubInvoices(); };
+  }, [dataMode, fb, authUser]);
+
+  const handleFirebaseSetupSaved = (cfg) => {
+    setFirebaseConfig(cfg);
+    setDataMode('firebase');
+  };
+
+  const handleSkipFirebaseSetup = () => {
+    setDataMode('local');
+  };
+
+  const handleOpenSetupFromLocal = () => {
+    setDataMode('needs-setup');
+  };
+
+  const handleLocalLogin = (name) => {
+    setLocalUser(name);
+    try{ localStorage.setItem(LOCAL_USER_KEY, name); }catch(e){}
+  };
+
+  const handleLocalLoginToFirebaseFallback = () => {
+    setDataMode('local');
+  };
+
+  const handleLogout = async () => {
+    if(dataMode === 'firebase' && fb && !fb.error){
+      try{ await window.__firebaseSdk.signOut(fb.auth); }catch(e){}
+      setAuthUser(null);
+      setInvoices([]);
+      setBaseline(50);
+    }else{
+      setLocalUser(null);
+      try{ localStorage.removeItem(LOCAL_USER_KEY); }catch(e){}
+    }
+  };
+
+  const handleSubmit = async (invoiceData) => {
+    const invoice = { ...invoiceData, ts: Date.now() };
+
+    if(dataMode === 'firebase' && fb && !fb.error && authUser){
+      const sdk = window.__firebaseSdk;
+      try{
+        const invoicesRef = sdk.collection(fb.db, 'users', authUser.uid, 'invoices');
+        await sdk.addDoc(invoicesRef, invoice);
+        if(invoice.type === 'A'){
+          await sdk.setDoc(sdk.doc(fb.db, 'users', authUser.uid), { baseline: invoice.score }, { merge: true });
+        }
+        setSyncStatus('online');
+      }catch(e){
+        console.error('寫入 Firestore 失敗', e);
+        setSyncStatus('error');
+        // 失敗時仍在本地暫存，避免資料遺失
+        const updated = [...invoices, invoice];
+        setInvoices(updated);
+      }
+    }else{
+      const updated = [...invoices, invoice];
+      setInvoices(updated);
+      saveLocalInvoices(updated);
+      if(invoice.type === 'A'){
+        setBaseline(invoice.score);
+        saveLocalBaseline(invoice.score);
+      }
+    }
+    setCurrentInvoice(invoice);
+  };
+
+  // ---- 畫面路由 ----
+
+  if(dataMode === 'checking'){
+    return null;
+  }
+
+  if(dataMode === 'needs-setup'){
+    return <FirebaseSetup onSaved={handleFirebaseSetupSaved} onSkip={handleSkipFirebaseSetup} />;
+  }
+
+  if(dataMode === 'firebase'){
+    if(fb && fb.error){
+      return (
+        <div className="setup-wrap">
+          <h2>Firebase 連接失敗</h2>
+          <p>{fb.error}</p>
+          <div className="setup-actions">
+            <button className="btn-ghost" onClick={()=>{ clearFirebaseConfig(); setFirebaseConfig(null); setDataMode('needs-setup'); }}>
+              重新設定 Firebase
+            </button>
+            <button className="btn-primary" onClick={handleLocalLoginToFirebaseFallback}>
+              改用本機模式
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if(!fb || authUser === undefined){
+      return null; // 等待 Firebase 初始化 / 判斷登入狀態
+    }
+    if(!authUser){
+      return <AuthScreen fb={fb} onLocalMode={handleLocalLoginToFirebaseFallback} />;
+    }
+    // 已登入 Firebase，繼續往下渲染主畫面
+  }
+
+  if(dataMode === 'local' && !localUser){
+    return (
+      <LocalLogin
+        onLogin={handleLocalLogin}
+        showFirebaseHint={!firebaseConfig}
+        onOpenSetup={handleOpenSetupFromLocal}
+      />
+    );
+  }
+
+  const displayName = dataMode === 'firebase'
+    ? (authUser.displayName || authUser.email || '使用者')
+    : localUser;
+
+  return (
+    <div className="app">
+      <h2 className="sr-only">學生 POS 虛擬收銀與發票系統，將學習進度與考試成績轉化為收銀收據</h2>
+      <div className="topbar">
+        <div className="brand">
+          <div className="brand-mark">POS</div>
+          <div className="brand-text">
+            <h1>學習能量補給站</h1>
+            <p>STUDENT POS INVOICE SYSTEM</p>
+          </div>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <div className={"sync-chip " + syncStatus}>
+            <div className="sdot"></div>
+            {dataMode === 'firebase'
+              ? (syncStatus === 'online' ? '雲端同步中' : syncStatus === 'error' ? '同步失敗' : '連接中')
+              : '本機儲存'}
+          </div>
+          <div className="user-chip">
+            <div className="dot">{displayName.slice(0,1)}</div>
+            <span>{displayName}</span>
+            <button onClick={handleLogout}>登出</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="layout">
+        <div>
+          <div className="panel">
+            <div className="tabs">
+              <button className={"tab " + (tab==='A'?'active':'')} onClick={()=>setTab('A')}>
+                模組 A · 學習行動值收銀台
+              </button>
+              <button className={"tab " + (tab==='B'?'active':'')} onClick={()=>setTab('B')}>
+                模組 B · 成績登錄台
+              </button>
+            </div>
+            <div className="tab-body">
+              {tab === 'A'
+                ? <ModuleA baseline={baseline} onSubmit={handleSubmit} />
+                : <ModuleB onSubmit={handleSubmit} />
+              }
+            </div>
+          </div>
+
+          <StatsAndHistory invoices={invoices} />
+        </div>
+
+        <Machine
+          printing={!!currentInvoice}
+          currentInvoice={currentInvoice}
+          onDone={()=>setCurrentInvoice(null)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BootApp(){
+  const [sdkReady, setSdkReady] = useState(!!window.__firebaseSdk || !!window.__firebaseSdkLoadFailed);
+  useEffect(()=>{
+    if(sdkReady) return;
+    const onReady = () => setSdkReady(true);
+    window.addEventListener('firebase-sdk-ready', onReady);
+    return ()=> window.removeEventListener('firebase-sdk-ready', onReady);
+  }, [sdkReady]);
+
+  if(!sdkReady){
+    return (
+      <div style={{textAlign:'center', padding:'20vh 20px', color:'var(--ink-soft)', fontSize:13}}>
+        載入中…
+      </div>
+    );
+  }
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<BootApp />);
+</script>
+</body>
+</html>
