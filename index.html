@@ -6,9 +6,6 @@
 <title>學習能量補給站 · 學生 POS 收銀系統</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
-  // 保險逾時：若 Firebase 模組（下方 type=module 區塊）在 4 秒內因網路或 CORS 問題
-  // 未能成功載入並觸發 firebase-sdk-ready，就視為載入失敗，讓 React 端可以顯示明確錯誤，
-  // 而不是永遠卡在空白畫面。一旦模組成功載入，會自行清除這個逾時。
   window.__firebaseSdkLoadFailed = false;
   window.__firebaseSdkTimeoutId = setTimeout(function(){
     if(!window.__firebaseSdk){
@@ -18,8 +15,6 @@
   }, 4000);
 </script>
 <script type="module">
-  // Firebase 模組化 SDK：載入後掛到 window.__firebase，讓下方的 React（Babel）程式碼可以使用。
-  // 尚未設定 Firebase 專案金鑰前，這段仍會載入但不會初始化 app，App 會自動退回本機（localStorage）模式。
   import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged,
@@ -648,7 +643,6 @@ function usePrinterSound(){
         osc.start(t);
         osc.stop(t+0.05);
       }
-      // final stamp thunk
       const thunkT = now + ticks*0.055 + 0.9;
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
@@ -674,7 +668,19 @@ const LOCAL_STORE_KEY = 'pos_invoices_local_v1';
 const LOCAL_BASELINE_KEY = 'pos_baseline_local_v1';
 const LOCAL_USER_KEY = 'pos_local_user_v1';
 
+// 已修正的全區域 Firebase 設定，下次開啟直接寫死載入，無需手動再貼
+const BUILT_IN_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB_nyDv784nKYxTTPB3uHRQNONsahU0S7E",
+  authDomain: "studypos-5a.firebaseapp.com",
+  projectId: "studypos-5a",
+  storageBucket: "studypos-5a.firebasestorage.app",
+  messagingSenderId: "921410870066",
+  appId: "1:921410870066:web:04b918b93d11978d45d52b",
+  measurementId: "G-DT1SKW96GV"
+};
+
 function loadFirebaseConfig(){
+  if(BUILT_IN_FIREBASE_CONFIG) return BUILT_IN_FIREBASE_CONFIG;
   try{
     const raw = localStorage.getItem(FIREBASE_CFG_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -775,13 +781,11 @@ function FirebaseSetup({ onSaved, onSkip }){
       return;
     }
     try{
-      // 允許使用者直接貼上 `const firebaseConfig = {...}` 或純物件
       let text = raw.trim();
       const objStart = text.indexOf('{');
       const objEnd = text.lastIndexOf('}');
       if(objStart === -1 || objEnd === -1) throw new Error('找不到 { } 物件內容');
       text = text.slice(objStart, objEnd+1);
-      // 把物件字面量轉成合法 JSON：幫沒加引號的 key 補上引號
       const jsonish = text.replace(/([{,]\s*)([A-Za-z0-9_]+)(\s*:)/g, '$1"$2"$3');
       const parsed = JSON.parse(jsonish);
       if(!parsed.apiKey || !parsed.projectId){
@@ -832,7 +836,7 @@ function FirebaseSetup({ onSaved, onSkip }){
 
 /* ---------------- 登入 / 註冊（Firebase） ---------------- */
 function AuthScreen({ fb, onLocalMode }){
-  const [mode, setMode] = useState('signin'); // signin | signup
+  const [mode, setMode] = useState('signin');
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -887,7 +891,6 @@ function AuthScreen({ fb, onLocalMode }){
       const provider = new sdk.GoogleAuthProvider();
       const cred = await sdk.signInWithPopup(fb.auth, provider);
       const user = cred.user;
-      // 第一次用 Google 登入時，在 Firestore 建立對應的使用者資料（若已存在則不覆蓋 baseline）
       const userDocRef = sdk.doc(fb.db, 'users', user.uid);
       const existing = await sdk.getDoc(userDocRef);
       if(!existing.exists()){
@@ -955,7 +958,6 @@ function AuthScreen({ fb, onLocalMode }){
           onClick={onLocalMode}
           style={{background:'none',border:'none',textDecoration:'underline',color:'var(--ink-soft)',cursor:'pointer',fontSize:'11.5px',padding:0}}
         >改用本機模式</button>
-
       </div>
     </div>
   );
@@ -1002,12 +1004,8 @@ function ModuleA({ baseline, onSubmit }){
   const [newAch, setNewAch] = useState('');
   const [err, setErr] = useState('');
 
-  // 每次基準分數改變（例如剛結帳完、或跨裝置同步到新資料）時，把滑桿重設回基準值，
-  // 避免滑桿卡在舊分數，造成成長率計算與畫面顯示不一致
   useEffect(()=>{ setScore(baseline); }, [baseline]);
 
-  // 成長率 Δ% = (本次-上次)/上次 × 100；結帳金額 = Δ% × 1000（Δ% 以「25」表示 25%）
-  // 範例核對：60→75 為 Δ%=25，結帳 $250 = 25 × 10；80→60 為 Δ%=-25，結帳 -$250 = -25 × 10
   const deltaPercent = baseline > 0 ? ((score - baseline) / baseline) * 100 : 0;
   const realAmount = deltaPercent * 10;
 
@@ -1431,9 +1429,9 @@ function StatsAndHistory({ invoices }){
   );
 }
 
-/* ---------------- Firebase app 初始化（只做一次） ---------------- */
+/* ---------------- Firebase app 初始化 ---------------- */
 function useFirebase(config){
-  const [fb, setFb] = useState(null); // { app, auth, db } | { error } | null(尚未判斷)
+  const [fb, setFb] = useState(null);
   const [sdkReady, setSdkReady] = useState(!!window.__firebaseSdk || !!window.__firebaseSdkLoadFailed);
 
   useEffect(()=>{
@@ -1467,23 +1465,20 @@ function useFirebase(config){
 
 /* ---------------- App ---------------- */
 function App(){
-  // 三種狀態：'checking'（判斷中）| 'needs-setup'（尚未設定 Firebase，顯示設定畫面或選擇本機模式）
-  // | 'firebase'（已設定 Firebase，走帳號登入）| 'local'（使用者選擇本機模式）
   const [dataMode, setDataMode] = useState('checking');
   const [firebaseConfig, setFirebaseConfig] = useState(null);
 
   const [localUser, setLocalUser] = useState(null);
-  const [authUser, setAuthUser] = useState(undefined); // undefined=尚未確認, null=未登入, object=已登入
+  const [authUser, setAuthUser] = useState(undefined);
 
   const [tab, setTab] = useState('A');
   const [invoices, setInvoices] = useState([]);
   const [baseline, setBaseline] = useState(50);
   const [currentInvoice, setCurrentInvoice] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('local'); // local | online | error
+  const [syncStatus, setSyncStatus] = useState('local');
 
   const fb = useFirebase(firebaseConfig);
 
-  // 開機判斷：讀取是否已存過 Firebase 設定 / 本機使用者
   useEffect(()=>{
     const cfg = loadFirebaseConfig();
     if(cfg){
@@ -1500,7 +1495,6 @@ function App(){
     }
   }, []);
 
-  // 本機模式：從 localStorage 載入資料
   useEffect(()=>{
     if(dataMode !== 'local') return;
     setInvoices(loadLocalInvoices());
@@ -1508,7 +1502,6 @@ function App(){
     setSyncStatus('local');
   }, [dataMode]);
 
-  // Firebase 模式：監聽登入狀態
   useEffect(()=>{
     if(dataMode !== 'firebase' || !fb || fb.error) return;
     const sdk = window.__firebaseSdk;
@@ -1518,7 +1511,6 @@ function App(){
     return unsub;
   }, [dataMode, fb]);
 
-  // Firebase 模式：登入後即時監聽 Firestore 的發票清單與基準分數
   useEffect(()=>{
     if(dataMode !== 'firebase' || !fb || fb.error || !authUser) return;
     const sdk = window.__firebaseSdk;
@@ -1596,7 +1588,6 @@ function App(){
       }catch(e){
         console.error('寫入 Firestore 失敗', e);
         setSyncStatus('error');
-        // 失敗時仍在本地暫存，避免資料遺失
         const updated = [...invoices, invoice];
         setInvoices(updated);
       }
@@ -1611,8 +1602,6 @@ function App(){
     }
     setCurrentInvoice(invoice);
   };
-
-  // ---- 畫面路由 ----
 
   if(dataMode === 'checking'){
     return null;
@@ -1640,12 +1629,11 @@ function App(){
       );
     }
     if(!fb || authUser === undefined){
-      return null; // 等待 Firebase 初始化 / 判斷登入狀態
+      return null;
     }
     if(!authUser){
       return <AuthScreen fb={fb} onLocalMode={handleLocalLoginToFirebaseFallback} />;
     }
-    // 已登入 Firebase，繼續往下渲染主畫面
   }
 
   if(dataMode === 'local' && !localUser){
